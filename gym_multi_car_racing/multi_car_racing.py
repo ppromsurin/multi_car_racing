@@ -465,6 +465,8 @@ class MultiCarRacing(gym.Env, EzPickle):
                 distance_to_tiles = np.linalg.norm(
                     car_pos - np.array(self.track)[:, 2:], ord=2, axis=1)
                 track_index = np.argmin(distance_to_tiles)
+                #print(np.min(distance_to_tiles))
+                #print(track_index)
 
                 # Check if car is driving on grass by checking inside polygons
                 on_grass = not np.array([car_pos_as_point.within(polygon)
@@ -493,7 +495,35 @@ class MultiCarRacing(gym.Env, EzPickle):
                     step_reward[car_id] -= K_BACKWARD * angle_diff
                 else:
                     self.driving_backward[car_id] = False
+            #-------------------------BEGIN MY CODE-----------------------------------------------
+            ### Make my custom states
+            ## Distance from centerline
+            x1 = self.track[track_index][2]
+            y1 = self.track[track_index][3]
+            midpoint1 = np.array([x1, y1, 0]) # x and y coords of tile start midpoint, z coords needed for cross product
 
+            try:
+                x2 = self.track[(track_index+1) % len(self.track)][2] # wrap index
+                y2 = self.track[(track_index+1) % len(self.track)][3]
+                midpoint2 = np.array([x2, y2, 0])# x and y coords of tile end midpoint
+            except:
+                print(track_index)
+                print(len(self.track))
+                print((track_index+1) % len(self.track))
+
+            #https://www.nagwa.com/en/explainers/939127418581/#:~:text=The%20perpendicular%20distance%20between%20a%20point%20and%20a%20line%20is,any%20point%20on%20the%20line.
+            Q = midpoint1
+            R = midpoint2
+            P = np.array([car_pos[0][0], car_pos[0][1], 0])
+            #print(P)
+
+            QR = R-Q;
+            QP = P-Q;
+
+            centerline_distance = np.linalg.norm(np.cross(QR, QP))/np.linalg.norm(QR)
+            #print(centerline_distance)
+
+            #---------------------------END MY CODE--------------------------------------------------
             self.prev_reward = self.reward.copy()
             if len(self.track) in self.tile_visited_count:
                 done = True
