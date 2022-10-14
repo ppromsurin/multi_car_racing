@@ -130,9 +130,10 @@ class MultiCarRacing(gym.Env, EzPickle):
 
     def __init__(self, num_agents=2, verbose=1, direction='CCW',
                  use_random_direction=True, backwards_flag=True, h_ratio=0.25,
-                 use_ego_color=False):
+                 use_ego_color=False, continuous = False):
         EzPickle.__init__(self)
         self.seed()
+        self.continuous = continuous # My code
         self.num_agents = num_agents
         self.contactListener_keepref = FrictionDetector(self)
         self.world = Box2D.b2World((0,0), contactListener=self.contactListener_keepref)
@@ -162,7 +163,20 @@ class MultiCarRacing(gym.Env, EzPickle):
         self.action_lb = np.tile(np.array([-1,+0,+0]), 1)  # self.num_agents)
         self.action_ub = np.tile(np.array([+1,+1,+1]), 1)  # self.num_agents)
 
-        self.action_space = spaces.Box( self.action_lb, self.action_ub, dtype=np.float32)  # (steer, gas, brake) x N
+        # self.action_space = spaces.Box( self.action_lb, self.action_ub, dtype=np.float32)  # (steer, gas, brake) x N
+
+        # BEGIN MY CODE
+        if self.continuous:
+            self.action_space = spaces.Box(
+                np.array([-1, 0, 0]).astype(np.float32),
+                np.array([+1, +1, +1]).astype(np.float32),
+            )  # steer, gas, brake
+        else:
+            self.action_space = spaces.Discrete(5)
+            # do nothing, left, right, gas, brake
+
+        # END MY CODE
+
         self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3), dtype=np.uint8)
 
 
@@ -417,20 +431,46 @@ class MultiCarRacing(gym.Env, EzPickle):
 
         if action is not None:
             # NOTE: re-shape action as input action is flattened
-            action = np.reshape(action, (self.num_agents, -1))
+            if self.continuous:
+                action = np.reshape(action, (self.num_agents, -1))
             for car_id, car in enumerate(self.cars):
-                car.steer(-action[car_id][0])
-                car.gas(action[car_id][1])
-                car.brake(action[car_id][2])
+                if action is not None:
+                    if self.continuous:
+                        steer_effort = -action[car_id][0]
+                        accel_effort = action[car_id][1]
+                        brake_effort = action[car_id][2]
+
+                        # print(steer_effort)
+                        # print(accel_effort)
+                        # print(brake_effort)
+
+                        car.steer(steer_effort)
+                        car.gas(accel_effort)
+                        car.brake(brake_effort)
+                    else:
+                        # print(action[car_id])
+                        steer_effort = -0.6 * (action[car_id] == 1) + 0.6 * (action[car_id] == 2)
+                        accel_effort = 0.2 * (action[car_id] == 3)
+                        brake_effort = 0.8 * (action[car_id] == 4)
+
+                        # print(steer_effort)
+                        # print(accel_effort)
+                        # print(brake_effort)
+                        car.steer(steer_effort)
+                        car.gas(accel_effort)
+                        car.brake(brake_effort)
+
 
         for car in self.cars:
             car.step(1.0/FPS)
         self.world.Step(1.0/FPS, 6*30, 2*30)
         self.t += 1.0/FPS
 
-        self.state = self.render("state_pixels")
+        # self.state = self.render("state_pixels") # MY CODE
 
         step_reward = np.zeros(self.num_agents)
+        state_vec = np.zeros((self.num_agents, 3))
+
         done = False
         if action is not None: # First step without action, called from reset()
             self.reward -= 0.1
@@ -441,6 +481,7 @@ class MultiCarRacing(gym.Env, EzPickle):
             # self.cars[0].fuel_spent = 0.0
 
             step_reward = self.reward - self.prev_reward
+
 
             # Add penalty for driving backward
             for car_id, car in enumerate(self.cars):  # Enumerate through cars
@@ -498,30 +539,33 @@ class MultiCarRacing(gym.Env, EzPickle):
             #-------------------------BEGIN MY CODE-----------------------------------------------
             ### Make my custom states
             ## Distance from centerline
-            x1 = self.track[track_index][2]
-            y1 = self.track[track_index][3]
-            midpoint1 = np.array([x1, y1, 0]) # x and y coords of tile start midpoint, z coords needed for cross product
+                x1 = self.track[track_index][2]
+                y1 = self.track[track_index][3]
+                midpoint1 = np.array([x1, y1, 0]) # x and y coords of tile start midpoint, z coords needed for cross product
 
-            try:
-                x2 = self.track[(track_index+1) % len(self.track)][2] # wrap index
-                y2 = self.track[(track_index+1) % len(self.track)][3]
-                midpoint2 = np.array([x2, y2, 0])# x and y coords of tile end midpoint
-            except:
-                print(track_index)
-                print(len(self.track))
-                print((track_index+1) % len(self.track))
+                try:
+                    x2 = self.track[(track_index+1) % len(self.track)][2] # wrap index
+                    y2 = self.track[(track_index+1) % len(self.track)][3]
+                    midpoint2 = np.array([x2, y2, 0])# x and y coords of tile end midpoint
+                except:
+                    print(track_index)
+                    print(len(self.track))
+                    print((track_index+1) % len(self.track))
 
             #https://www.nagwa.com/en/explainers/939127418581/#:~:text=The%20perpendicular%20distance%20between%20a%20point%20and%20a%20line%20is,any%20point%20on%20the%20line.
-            Q = midpoint1
-            R = midpoint2
-            P = np.array([car_pos[0][0], car_pos[0][1], 0])
-            #print(P)
+                Q = midpoint1
+                R = midpoint2
+                P = np.array([car_pos[0][0], car_pos[0][1], 0])
+                #print(P)
 
-            QR = R-Q;
-            QP = P-Q;
+                QR = R-Q;
+                QP = P-Q;
 
-            centerline_distance = np.linalg.norm(np.cross(QR, QP))/np.linalg.norm(QR)
-            #print(centerline_distance)
+                centerline_distance = np.linalg.norm(np.cross(QR, QP))/np.linalg.norm(QR)
+                # print(centerline_distance)
+
+                speed = np.linalg.norm(vel)
+                state_vec[car_id] = [speed, centerline_distance, angle_diff]
 
             #---------------------------END MY CODE--------------------------------------------------
             self.prev_reward = self.reward.copy()
@@ -535,7 +579,7 @@ class MultiCarRacing(gym.Env, EzPickle):
                 if abs(x) > PLAYFIELD or abs(y) > PLAYFIELD:
                     done = True
                     step_reward[car_id] = -100
-
+        self.state = state_vec
         return self.state, step_reward, done, {}
 
     def render(self, mode='human'):
