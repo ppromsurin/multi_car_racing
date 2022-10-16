@@ -454,8 +454,8 @@ class MultiCarRacing(gym.Env, EzPickle):
 
 
                         steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2)
-                        accel_effort = 0.8 * (action_taken == 3) + 0.8 * (action_taken == 1 or action_taken == 2)
-                        brake_effort = 0.2 * (action_taken == 4)
+                        accel_effort = 0.8 * (action_taken == 3) + 0.02 * (action_taken == 1 or action_taken == 2)
+                        brake_effort = 0.3 * (action_taken == 4)
 
                         # print(steer_effort)
                         # print(accel_effort)
@@ -568,20 +568,25 @@ class MultiCarRacing(gym.Env, EzPickle):
                 centerline_distance = np.linalg.norm(np.cross(QR, QP))/np.linalg.norm(QR)
                 # print(centerline_distance)
 
+                # need to know which direction the angle difference is, so range from 0 to 2pi
+                angle_diff2 = desired_angle - car_angle
+                angle_diff2 = (angle_diff2 + (2 * np.pi)) % (2 * np.pi)
+
                 speed = np.linalg.norm(vel)
-                state_vec[car_id] = [speed, centerline_distance, angle_diff]
+                state_vec[car_id] = [speed, centerline_distance, angle_diff2]
 
                 # Reward function for going off track
                 border = TRACK_WIDTH/2
                 border_dist = centerline_distance - border
                 # print(border_dist)
 
-                step_reward += -0.01 * border_dist/np.abs(border_dist) * np.exp(border_dist)
+                if border_dist > 0:
+                    step_reward += -10 * np.exp(border_dist)
 
             #---------------------------END MY CODE--------------------------------------------------
             self.prev_reward = self.reward.copy()
-            if len(self.track) in self.tile_visited_count:
-                done = True
+            # if len(self.track) in self.tile_visited_count:
+            #     done = True
 
             # The car that leaves the field experiences a reward of -100 
             # and the episode is terminated subsequently.
