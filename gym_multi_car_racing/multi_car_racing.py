@@ -598,16 +598,17 @@ class MultiCarRacing(gym.Env, EzPickle):
         self.state = state_vec
         return self.state, step_reward, done, {}
 
-    def render(self, mode='human'):
+    def render(self, mode='human', viewMe = 'car'):
         assert mode in ['human', 'state_pixels', 'rgb_array']
-
+        assert viewMe in ['car', 'full']
         result = []
         for cur_car_id in range(self.num_agents):
-            result.append(self._render_window(cur_car_id, mode))
-        
+            result.append(self._render_window(cur_car_id, mode, viewMe))
         return np.stack(result, axis=0)
 
-    def _render_window(self, car_id, mode):
+    
+
+    def _render_window(self, car_id, mode, viewMe):
         """ Performs the actual rendering for each car individually. 
         
         Parameters:
@@ -626,24 +627,24 @@ class MultiCarRacing(gym.Env, EzPickle):
             self.transform = rendering.Transform()
 
         if "t" not in self.__dict__: return  # reset() not called yet
+        if viewMe == 'car':
+            zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
+            #NOTE (ig): Following two variables seemed unused. Commented them out.
+            #zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W
+            #zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
+            scroll_x = self.cars[car_id].hull.position[0]
+            scroll_y = self.cars[car_id].hull.position[1]
+            angle = -self.cars[car_id].hull.angle
+            vel = self.cars[car_id].hull.linearVelocity
+            if np.linalg.norm(vel) > 0.5:
+                angle = math.atan2(vel[0], vel[1])
+            self.transform.set_scale(zoom, zoom)
 
-        zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
-        #NOTE (ig): Following two variables seemed unused. Commented them out.
-        #zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W 
-        #zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
-        scroll_x = self.cars[car_id].hull.position[0]
-        scroll_y = self.cars[car_id].hull.position[1]
-        angle = -self.cars[car_id].hull.angle
-        vel = self.cars[car_id].hull.linearVelocity
-        if np.linalg.norm(vel) > 0.5:
-            angle = math.atan2(vel[0], vel[1])
-        self.transform.set_scale(zoom, zoom)
-
-        # Positions car in the center with regard to the window width and 1/4 height away from the bottom.
-        self.transform.set_translation(
-            WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
-            WINDOW_H * self.h_ratio - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
-        self.transform.set_rotation(angle)
+            # Positions car in the center with regard to the window width and 1/4 height away from the bottom.
+            self.transform.set_translation(
+                WINDOW_W/2 - (scroll_x*zoom*math.cos(angle) - scroll_y*zoom*math.sin(angle)),
+                WINDOW_H * self.h_ratio - (scroll_x*zoom*math.sin(angle) + scroll_y*zoom*math.cos(angle)) )
+            self.transform.set_rotation(angle)
 
         # Set colors for each viewer and draw cars
         for id, car in enumerate(self.cars):
