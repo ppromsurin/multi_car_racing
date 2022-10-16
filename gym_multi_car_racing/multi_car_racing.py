@@ -449,9 +449,13 @@ class MultiCarRacing(gym.Env, EzPickle):
                         car.brake(brake_effort)
                     else:
                         # print(action[car_id])
-                        steer_effort = -0.6 * (action[car_id] == 1) + 0.6 * (action[car_id] == 2)
-                        accel_effort = 0.2 * (action[car_id] == 3)
-                        brake_effort = 0.8 * (action[car_id] == 4)
+
+                        action_taken = action[car_id]
+
+
+                        steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2)
+                        accel_effort = 0.8 * (action_taken == 3) + 0.8 * (action_taken == 1 or action_taken == 2)
+                        brake_effort = 0.2 * (action_taken == 4)
 
                         # print(steer_effort)
                         # print(accel_effort)
@@ -566,6 +570,13 @@ class MultiCarRacing(gym.Env, EzPickle):
 
                 speed = np.linalg.norm(vel)
                 state_vec[car_id] = [speed, centerline_distance, angle_diff]
+
+                # Reward function for going off track
+                border = TRACK_WIDTH/2
+                border_dist = centerline_distance - border
+                # print(border_dist)
+
+                step_reward += -0.01 * border_dist/np.abs(border_dist) * np.exp(border_dist)
 
             #---------------------------END MY CODE--------------------------------------------------
             self.prev_reward = self.reward.copy()
