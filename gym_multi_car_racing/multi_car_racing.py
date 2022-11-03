@@ -13,6 +13,8 @@ import pyglet
 from pyglet import gl
 from shapely.geometry import Point, Polygon
 
+from itertools import permutations
+
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
 # fine.
@@ -118,6 +120,7 @@ class FrictionDetector(contactListener):
                 past_visitors = sum(tile.road_visited)-1
                 reward_factor = 1 - (past_visitors / self.env.num_agents)
                 self.env.reward[obj.car_id] += reward_factor * 1000.0/len(self.env.track)
+                # print(reward_factor * 1000.0/len(self.env.track))
         else:
             obj.tiles.remove(tile)
             # print tile.road_friction, "DEL", len(obj.tiles) -- should delete to zero when on grass (this works)
@@ -172,7 +175,7 @@ class MultiCarRacing(gym.Env, EzPickle):
                 np.array([+1, +1, +1]).astype(np.float32),
             )  # steer, gas, brake
         else:
-            self.action_space = spaces.Discrete(5)
+            self.action_space = spaces.Discrete(72)
             # do nothing, left, right, gas, brake
 
         # END MY CODE
@@ -288,7 +291,8 @@ class MultiCarRacing(gym.Env, EzPickle):
                 i1 = i
                 break
         if self.verbose == 1:
-            print("Track generation: %i..%i -> %i-tiles track" % (i1, i2, i2-i1))
+            None
+            # print("Track generation: %i..%i -> %i-tiles track" % (i1, i2, i2-i1))
         assert i1!=-1
         assert i2!=-1
 
@@ -375,7 +379,8 @@ class MultiCarRacing(gym.Env, EzPickle):
             if success:
                 break
             if self.verbose == 1:
-                print("retry to generate track (normal if there are not many of this messages)")
+                None
+                # print("retry to generate track (normal if there are not many of this messages)")
 
         (angle, pos_x, pos_y) = self.track[0][1:4]
         car_width = car_dynamics.SIZE * (car_dynamics.WHEEL_W * 2 \
@@ -429,7 +434,8 @@ class MultiCarRacing(gym.Env, EzPickle):
                 commands for each car. Each command is of the shape (steer, gas, brake).
         """
 
-        if action is not None:
+        # if action is not None:
+        if True:
             # NOTE: re-shape action as input action is flattened
             if self.continuous:
                 action = np.reshape(action, (self.num_agents, -1))
@@ -452,10 +458,24 @@ class MultiCarRacing(gym.Env, EzPickle):
 
                         action_taken = action[car_id]
 
+                        action_range = np.linspace(-1,1,9)
+                        action_list = np.array(list(permutations(action_range,2)))
 
-                        steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2)
-                        accel_effort = 0.8 * (action_taken == 3) + 0.02 * (action_taken == 1 or action_taken == 2)
-                        brake_effort = 0.3 * (action_taken == 4)
+                        action_vals = action_list[action_taken]
+
+                        if action_vals[0] < 0: # braking
+                            accel_effort = 0;
+                            brake_effort = np.abs(action_vals[0])
+                        else:
+                            accel_effort = np.abs(action_vals[0])
+                            brake_effort = 0
+
+                        steer_effort = action_vals[1]
+
+
+                        # steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2) - 0.1 * (action_taken == 5) + 0.1 * (action_taken == 6)
+                        # accel_effort = 0.8 * (action_taken == 3) + 0.8 * (action_taken == 5 or action_taken == 6)
+                        # brake_effort = 0.3 * (action_taken == 4)
 
                         # print(steer_effort)
                         # print(accel_effort)
@@ -472,13 +492,14 @@ class MultiCarRacing(gym.Env, EzPickle):
 
         # self.state = self.render("state_pixels") # MY CODE
 
-        step_reward = np.zeros(self.num_agents)
+        # step_reward = np.zeros(self.num_agents)
         state_vec = np.zeros((self.num_agents, 13))
 
         done = False
         terminate = False
-        if action is not None: # First step without action, called from reset()
-            self.reward -= 0.1
+        # if action is not None: # First step without action, called from reset()
+        if True:
+            # self.reward -= 0.1
             # We actually don't want to count fuel spent, we want car to be faster.
             # self.reward -=  10 * self.car.fuel_spent / ENGINE_POWER
 
@@ -486,6 +507,9 @@ class MultiCarRacing(gym.Env, EzPickle):
             # self.cars[0].fuel_spent = 0.0
 
             step_reward = self.reward - self.prev_reward
+            # print('step_reward', step_reward)
+            # print('reward', self.reward)
+            # print('prev_reward', self.prev_reward)
 
 
             # Add penalty for driving backward
@@ -538,7 +562,7 @@ class MultiCarRacing(gym.Env, EzPickle):
                 # backwards flag is set even if it is driving on grass.
                 if angle_diff > BACKWARD_THRESHOLD:
                     self.driving_backward[car_id] = True
-                    step_reward[car_id] -= K_BACKWARD * angle_diff
+                    # step_reward[car_id] -= K_BACKWARD * angle_diff
                 else:
                     self.driving_backward[car_id] = False
             #-------------------------BEGIN MY CODE-----------------------------------------------
@@ -567,6 +591,9 @@ class MultiCarRacing(gym.Env, EzPickle):
                 QP = P-Q;
 
                 centerline_distance = np.linalg.norm(np.cross(QR, QP))/np.linalg.norm(QR)
+                sign = np.sign(np.cross(QP,QR)[2]) # find the z component, left of centerline is neg, right is pos
+                distance = centerline_distance * sign
+
                 # print(centerline_distance)
 
                 # need to know which direction the angle difference is, so range from 0 to 2pi
@@ -585,11 +612,13 @@ class MultiCarRacing(gym.Env, EzPickle):
                 future_angles = (future_angles + (2*np.pi)) % (2* np.pi)
                 des_future_angles = future_angles - car_angle
                 # print(future_angles)
-                print(des_future_angles)
+                # print(des_future_angles)
 
 
                 speed = np.linalg.norm(vel)
-                state_vec[car_id] = np.concatenate(([speed, centerline_distance, angle_diff2], des_future_angles),axis = None)
+                # x,y = car.hull.position
+                state_vec[car_id] = np.concatenate(([speed, distance, angle_diff2],
+                                                    des_future_angles),axis = None)
 
                 # Reward function for going off track
                 border = TRACK_WIDTH/2
@@ -597,10 +626,17 @@ class MultiCarRacing(gym.Env, EzPickle):
                 # print(border_dist)
 
                 if border_dist > 0:
-                    step_reward += -10 * np.exp(border_dist)
+                    # step_reward[car_id] += -0.1
+                    # step_reward[car_id] += -0.1 * np.exp(0.01*border_dist)
+                    None
+
+                self.border_cross = False
+                if border_dist > 20:
+                    step_reward[car_id] += -100
+                    self.border_cross = True
 
             #---------------------------END MY CODE--------------------------------------------------
-            self.prev_reward = self.reward.copy()
+
             # if len(self.track) in self.tile_visited_count:
             #     done = True
 
@@ -620,8 +656,13 @@ class MultiCarRacing(gym.Env, EzPickle):
 
         info = {
             "position": car.hull.position,
-            "playfield": PLAYFIELD
+            "playfield": PLAYFIELD,
+            "border_cross": self.border_cross
         }
+        step_reward += -0.1 # Penalize time staying still
+        self.reward += step_reward
+        # print(step_reward)
+        self.prev_reward = self.reward.copy()
         return self.state, step_reward, done, info
 
     def render(self, mode='human', viewMe = 'car'):
