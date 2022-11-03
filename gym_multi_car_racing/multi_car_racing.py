@@ -13,7 +13,7 @@ import pyglet
 from pyglet import gl
 from shapely.geometry import Point, Polygon
 
-from itertools import permutations
+from itertools import product
 
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
@@ -175,7 +175,7 @@ class MultiCarRacing(gym.Env, EzPickle):
                 np.array([+1, +1, +1]).astype(np.float32),
             )  # steer, gas, brake
         else:
-            self.action_space = spaces.Discrete(72)
+            self.action_space = spaces.Discrete(25)
             # do nothing, left, right, gas, brake
 
         # END MY CODE
@@ -458,8 +458,8 @@ class MultiCarRacing(gym.Env, EzPickle):
 
                         action_taken = action[car_id]
 
-                        action_range = np.linspace(-1,1,9)
-                        action_list = np.array(list(permutations(action_range,2)))
+                        action_range = np.linspace(-1,1,5)
+                        action_list = np.array(list(product(action_range,action_range)))
 
                         action_vals = action_list[action_taken]
 
