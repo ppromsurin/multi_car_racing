@@ -77,7 +77,7 @@ LATERAL_SPACING = 3  # Starting side distance between pairs of cars
 
 # Penalizing backwards driving
 BACKWARD_THRESHOLD = np.pi/2
-K_BACKWARD = 0  # Penalty weight: backwards_penalty = K_BACKWARD * angle_diff  (if angle_diff > BACKWARD_THRESHOLD)
+K_BACKWARD = 0.1  # Penalty weight: backwards_penalty = K_BACKWARD * angle_diff  (if angle_diff > BACKWARD_THRESHOLD)
 
 class FrictionDetector(contactListener):
     def __init__(self, env):
@@ -118,7 +118,8 @@ class FrictionDetector(contactListener):
 
                 # The reward is dampened on tiles that have been visited already.
                 past_visitors = sum(tile.road_visited)-1
-                reward_factor = 1 - (past_visitors / self.env.num_agents)
+                # reward_factor = 1 - (past_visitors / self.env.num_agents)
+                reward_factor = 1
                 self.env.reward[obj.car_id] += reward_factor * 1000.0/len(self.env.track)
                 # print(reward_factor * 1000.0/len(self.env.track))
         else:
@@ -162,6 +163,7 @@ class MultiCarRacing(gym.Env, EzPickle):
         self.backwards_flag = backwards_flag  # Boolean for rendering backwards driving flag
         self.h_ratio = h_ratio  # Configures vertical location of car within rendered window
         self.use_ego_color = use_ego_color  # Whether to make ego car always render as the same color
+        self.state = np.zeros((self.num_agents, 13))
 
         self.action_lb = np.tile(np.array([-1,+0,+0]), 1)  # self.num_agents)
         self.action_ub = np.tile(np.array([+1,+1,+1]), 1)  # self.num_agents)
@@ -175,7 +177,7 @@ class MultiCarRacing(gym.Env, EzPickle):
                 np.array([+1, +1, +1]).astype(np.float32),
             )  # steer, gas, brake
         else:
-            self.action_space = spaces.Discrete(25)
+            self.action_space = spaces.Discrete(5)
             # do nothing, left, right, gas, brake
 
         # END MY CODE
@@ -458,24 +460,32 @@ class MultiCarRacing(gym.Env, EzPickle):
 
                         action_taken = action[car_id]
 
-                        action_range = np.linspace(-1,1,5)
-                        action_list = np.array(list(product(action_range,action_range)))
-
-                        action_vals = action_list[action_taken]
-
-                        if action_vals[0] < 0: # braking
-                            accel_effort = 0;
-                            brake_effort = np.abs(action_vals[0])
-                        else:
-                            accel_effort = np.abs(action_vals[0])
-                            brake_effort = 0
-
-                        steer_effort = action_vals[1]
+                        # action_range = np.linspace(-1,1,5)
+                        # action_list = np.array(list(product(action_range,action_range)))
+                        #
+                        # action_vals = action_list[action_taken]
+                        #
+                        # if action_vals[0] < 0: # braking
+                        #     accel_effort = 0;
+                        #     brake_effort = np.abs(action_vals[0])
+                        # else:
+                        #     accel_effort = np.abs(action_vals[0])
+                        #     brake_effort = 0
+                        #
+                        # steer_effort = action_vals[1]
 
 
                         # steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2) - 0.1 * (action_taken == 5) + 0.1 * (action_taken == 6)
                         # accel_effort = 0.8 * (action_taken == 3) + 0.8 * (action_taken == 5 or action_taken == 6)
                         # brake_effort = 0.3 * (action_taken == 4)
+
+                        # steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2)
+                        # accel_effort = 0.8 * (action_taken == 3)
+                        # brake_effort = 0.3 * (action_taken == 4)
+
+                        steer_effort = -0.6 * (action_taken == 1) + 0.6 * (action_taken == 2)
+                        accel_effort = 0.8 * (action_taken == 3) + 0.1 * (action_taken == 1 or action_taken == 2)
+                        brake_effort = 0.3 * (action_taken == 4)
 
                         # print(steer_effort)
                         # print(accel_effort)
@@ -492,7 +502,7 @@ class MultiCarRacing(gym.Env, EzPickle):
 
         # self.state = self.render("state_pixels") # MY CODE
 
-        # step_reward = np.zeros(self.num_agents)
+        step_reward = np.zeros(self.num_agents)
         state_vec = np.zeros((self.num_agents, 13))
 
         done = False
@@ -506,12 +516,12 @@ class MultiCarRacing(gym.Env, EzPickle):
             # NOTE(IG): Probably not relevant. Seems not to be used anywhere. Commented it out.
             # self.cars[0].fuel_spent = 0.0
 
-            step_reward = self.reward - self.prev_reward
+
             # print('step_reward', step_reward)
             # print('reward', self.reward)
             # print('prev_reward', self.prev_reward)
 
-
+            last_state = self.state
             # Add penalty for driving backward
             for car_id, car in enumerate(self.cars):  # Enumerate through cars
 
@@ -597,7 +607,10 @@ class MultiCarRacing(gym.Env, EzPickle):
                 # print(centerline_distance)
 
                 # need to know which direction the angle difference is, so range from 0 to 2pi
-                angle_diff2 = desired_angle - car_angle
+                ang = (self.track[track_index][1] + (2 * np.pi)) % (2* np.pi)
+                angle_diff2 = ang - car_angle
+                # print('track angle', ang)
+                # print('car angle', car_angle)
                 angle_diff2 = (angle_diff2 + (2 * np.pi)) % (2 * np.pi)
 
                 # get track angles for track after current
@@ -616,14 +629,25 @@ class MultiCarRacing(gym.Env, EzPickle):
 
 
                 speed = np.linalg.norm(vel)
+                # print(speed)
                 # x,y = car.hull.position
                 state_vec[car_id] = np.concatenate(([speed, distance, angle_diff2],
                                                     des_future_angles),axis = None)
 
                 # Reward function for going off track
                 border = TRACK_WIDTH/2
-                border_dist = centerline_distance - border
+                last_distance = last_state[car_id][1]
+                border_dist = abs(distance+1) - border
+                last_border_dist = abs(last_distance+1) - border
                 # print(border_dist)
+
+                # if speed > np.exp(1):
+                #     step_reward[car_id] += 0.01 * np.log(speed)
+                # else:
+                #     step_reward[car_id] -= 0.01
+
+                # if angle_diff < np.pi/8:
+                #     step_reward[car_id] += 0.01
 
                 if border_dist > 0:
                     # step_reward[car_id] += -0.1
@@ -631,14 +655,20 @@ class MultiCarRacing(gym.Env, EzPickle):
                     None
 
                 self.border_cross = False
-                if border_dist > 20:
+                if border_dist > 50:
                     step_reward[car_id] += -100
                     self.border_cross = True
 
-            #---------------------------END MY CODE--------------------------------------------------
+                if last_border_dist < border_dist and border_dist > 0:
+                    step_reward[car_id] -= 0.1
 
-            # if len(self.track) in self.tile_visited_count:
-            #     done = True
+
+
+            #---------------------------END MY CODE--------------------------------------------------
+            self.all_tiles = False
+            if len(self.track) in self.tile_visited_count:
+                self.all_tiles = True
+                done = True
 
             # The car that leaves the field experiences a reward of -100 
             # and the episode is terminated subsequently.
@@ -657,11 +687,14 @@ class MultiCarRacing(gym.Env, EzPickle):
         info = {
             "position": car.hull.position,
             "playfield": PLAYFIELD,
-            "border_cross": self.border_cross
+            "border_cross": self.border_cross,
+            "all_tiles": self.all_tiles
         }
         step_reward += -0.1 # Penalize time staying still
+        step_reward += self.reward - self.prev_reward
         self.reward += step_reward
         # print(step_reward)
+
         self.prev_reward = self.reward.copy()
         return self.state, step_reward, done, info
 
@@ -765,7 +798,7 @@ class MultiCarRacing(gym.Env, EzPickle):
         if None not in self.viewer:
             for viewer in self.viewer:
                 viewer.close()
-                print('why')
+                
 
         self.viewer = [None] * self.num_agents
 
